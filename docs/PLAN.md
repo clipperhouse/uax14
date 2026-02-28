@@ -37,10 +37,13 @@
 
 ## Phase 3: Lookup API
 
-- Implement internal lookup: `func lookup(p []byte) Class` (or rune-based equivalent) backed by generated trie.
-- Add generic facade where useful, e.g. `Lookup[T ~string | ~[]byte](in T)` delegating to shared byte-oriented core.
-- Expose public API only if needed (`Lookup`), otherwise keep minimal surface and let iterator/split drive usage.
-- Add focused tests for representative code points across major LB classes and defaults.
+- Status: in progress (started)
+- [x] Implement internal property lookup backed by generated trie (`lookupProperty[T ~string | ~[]byte](in T) property` wrapping generated `lookup`).
+- [x] Keep lookup internal-only for now; do not expose a public `Lookup` API yet.
+- [x] Add focused tests for representative code points across major LB classes, defaults, generic parity, and UTF-8 edge cases.
+- Implementation artifacts:
+  - `docs/phase3.md`
+  - `lookup_test.go`
 
 ## Phase 4: SplitFunc core algorithm
 
