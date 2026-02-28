@@ -22,19 +22,7 @@
   - `docs/unicode-data.md`
   - `docs/rule-worksheet.md`
 
-## Phase 2: Repo/file skeleton
-
-- Add initial structure:
-  - `internal/gen/main.go`
-  - `internal/data/linebreak_classes.go` (generated)
-  - `lookup.go`
-  - `split.go`
-  - `iterator.go`
-  - `doc.go`
-  - `internal/tests/linebreak_conformance_test.go`
-- Add `go:generate` wiring so data generation is deterministic and reproducible.
-
-## Phase 3: Unicode data + trie codegen
+## Phase 2: Unicode data + trie codegen
 
 - Implement generator to fetch and parse Unicode data (version-pinned URL + optional local cache).
 - Emit:
@@ -42,14 +30,14 @@
   - Trie lookup table via `x/text` triegen for UTF-8 byte lookup.
 - Keep generated artifacts stable (sorted output, header with Unicode version) to reduce diff noise.
 
-## Phase 4: Lookup API
+## Phase 3: Lookup API
 
 - Implement internal lookup: `func lookup(p []byte) Class` (or rune-based equivalent) backed by generated trie.
 - Add generic facade where useful, e.g. `Lookup[T ~string | ~[]byte](in T)` delegating to shared byte-oriented core.
 - Expose public API only if needed (`Lookup`), otherwise keep minimal surface and let iterator/split drive usage.
 - Add focused tests for representative code points across major LB classes and defaults.
 
-## Phase 5: SplitFunc core algorithm
+## Phase 4: SplitFunc core algorithm
 
 - Implement `bufio.SplitFunc` as the source of break decisions:
   - Track current boundary position explicitly (matching spec semantics).
@@ -58,7 +46,7 @@
 - Include explicit handling for CR/LF/NL, combining marks/ZWJ behavior, regional indicators, emoji classes, and numeric punctuation interactions.
 - Keep this path allocation-free: no per-token heap objects, no string/byte copying, and no closure captures on hot loops.
 
-## Phase 6: Iterator + public API
+## Phase 5: Iterator + public API
 
 - Build iterator around split decisions:
   - `NewIterator[T ~string | ~[]byte](in T)`
@@ -71,7 +59,7 @@
 - Keep API close to your sketch in `SPEC.md`; prefer correctness and clarity over early options.
 - Add package docs and one short example demonstrating loop usage.
 
-## Phase 7: Test strategy and quality gates
+## Phase 6: Test strategy and quality gates
 
 - Conformance tests:
   - Parse `LineBreakTest.txt` and assert produced boundaries + mandatory status.
@@ -83,7 +71,7 @@
 - Add explicit allocation assertions (e.g., `testing.AllocsPerRun`) for core iterator flows, with expected value `0` after warmup.
 - CI target: `go test ./...` with generation check (`go generate` no-diff guard).
 
-## Phase 8: Incremental delivery order
+## Phase 7: Incremental delivery order
 
 - Milestone 1: codegen + lookup + class tests.
 - Milestone 2: initial SplitFunc covering structural rules and simple classes.
