@@ -1,4 +1,4 @@
-// Package main generates line-break trie data.
+// Package main generates line-break trie data and conformance test cases.
 package main
 
 import (
@@ -10,17 +10,23 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/clipperhouse/uax14/internal/gen/triegen"
 )
 
 const (
-	defaultLineBreakURL = "https://unicode.org/Public/UNIDATA/LineBreak.txt"
-	outputFilename      = "../../trie.go"
+	unicodeVersion          = "17.0.0"
+	defaultLineBreakURL     = "https://unicode.org/Public/" + unicodeVersion + "/ucd/LineBreak.txt"
+	defaultLineBreakTestURL = "https://unicode.org/Public/" + unicodeVersion + "/ucd/auxiliary/LineBreakTest.txt"
+	outputFilename          = "../../trie.go"
+	outputTestFilename      = "../../linebreak_conformance_generated_test.go"
+	cacheDir                = "cache"
 )
 
 var versionRE = regexp.MustCompile(`LineBreak-([0-9]+(?:\.[0-9]+)*)\.txt`)
@@ -31,41 +37,75 @@ type record struct {
 	class string
 }
 
+type conformanceCase struct {
+	lineNo       int
+	input        []byte
+	breakOffsets []int
+	comment      string
+}
+
 func main() {
 	var inputPath string
 	var sourceURL string
+	var testInputPath string
+	var testURL string
+	var refresh bool
 
 	flag.StringVar(&inputPath, "input", "", "path to local LineBreak.txt file (optional)")
 	flag.StringVar(&sourceURL, "url", defaultLineBreakURL, "LineBreak.txt URL")
+	flag.StringVar(&testInputPath, "testinput", "", "path to local LineBreakTest.txt file (optional)")
+	flag.StringVar(&testURL, "testurl", defaultLineBreakTestURL, "LineBreakTest.txt URL")
+	flag.BoolVar(&refresh, "refresh", false, "refresh local cache from network")
 	flag.Parse()
 
-	content, sourceLabel, err := loadData(inputPath, sourceURL)
+	content, sourceLabel, err := loadData(inputPath, sourceURL, cachePath("LineBreak.txt"), refresh)
 	if err != nil {
 		fail(err)
 	}
 
-	version := extractVersion(content)
+	version := unicodeVersion
+	if extracted := extractVersion(content); extracted != "unknown" && extracted != unicodeVersion {
+		fail(fmt.Errorf("LineBreak.txt version mismatch: got %s, expected %s", extracted, unicodeVersion))
+	}
 	records, err := parseLineBreak(content)
 	if err != nil {
 		fail(err)
 	}
 
-	src, err := generate(records, version, sourceLabel)
+	src, err := generateTrieSource(records, version, sourceLabel)
 	if err != nil {
 		fail(err)
 	}
-
 	formatted, err := format.Source(src)
 	if err != nil {
-		fail(fmt.Errorf("format generated file: %w", err))
+		fail(fmt.Errorf("format trie file: %w", err))
 	}
-
 	if err := os.WriteFile(outputFilename, formatted, 0o644); err != nil {
 		fail(fmt.Errorf("write %s: %w", outputFilename, err))
 	}
+
+	testContent, testSourceLabel, err := loadData(testInputPath, testURL, cachePath("LineBreakTest.txt"), refresh)
+	if err != nil {
+		fail(err)
+	}
+	tests, err := parseLineBreakTests(testContent)
+	if err != nil {
+		fail(err)
+	}
+	testSrc, err := generateConformanceTestsSource(tests, testSourceLabel)
+	if err != nil {
+		fail(err)
+	}
+	testFormatted, err := format.Source(testSrc)
+	if err != nil {
+		fail(fmt.Errorf("format conformance test file: %w", err))
+	}
+	if err := os.WriteFile(outputTestFilename, testFormatted, 0o644); err != nil {
+		fail(fmt.Errorf("write %s: %w", outputTestFilename, err))
+	}
 }
 
-func loadData(inputPath, sourceURL string) ([]byte, string, error) {
+func loadData(inputPath, sourceURL, cachedPath string, refresh bool) ([]byte, string, error) {
 	if inputPath != "" {
 		b, err := os.ReadFile(inputPath)
 		if err != nil {
@@ -74,11 +114,20 @@ func loadData(inputPath, sourceURL string) ([]byte, string, error) {
 		return b, inputPath, nil
 	}
 
+	if !refresh && cachedPath != "" {
+		b, err := os.ReadFile(cachedPath)
+		if err == nil {
+			return b, cachedPath, nil
+		}
+		if !os.IsNotExist(err) {
+			return nil, "", fmt.Errorf("read cache %s: %w", cachedPath, err)
+		}
+	}
+
 	req, err := http.NewRequest(http.MethodGet, sourceURL, nil)
 	if err != nil {
 		return nil, "", fmt.Errorf("build request: %w", err)
 	}
-
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("download %s: %w", sourceURL, err)
@@ -94,7 +143,20 @@ func loadData(inputPath, sourceURL string) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("read response body: %w", err)
 	}
 
+	if cachedPath != "" {
+		if err := os.MkdirAll(filepath.Dir(cachedPath), 0o755); err != nil {
+			return nil, "", fmt.Errorf("create cache dir for %s: %w", cachedPath, err)
+		}
+		if err := os.WriteFile(cachedPath, b, 0o644); err != nil {
+			return nil, "", fmt.Errorf("write cache %s: %w", cachedPath, err)
+		}
+	}
+
 	return b, sourceURL, nil
+}
+
+func cachePath(filename string) string {
+	return filepath.Join(cacheDir, unicodeVersion, filename)
 }
 
 func extractVersion(content []byte) string {
@@ -136,11 +198,7 @@ func parseLineBreak(content []byte) ([]record, error) {
 			return nil, fmt.Errorf("line %d: %w", lineNo, err)
 		}
 
-		records = append(records, record{
-			lo:    lo,
-			hi:    hi,
-			class: right,
-		})
+		records = append(records, record{lo: lo, hi: hi, class: right})
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("scan file: %w", err)
@@ -157,6 +215,72 @@ func parseLineBreak(content []byte) ([]record, error) {
 	})
 
 	return records, nil
+}
+
+func parseLineBreakTests(content []byte) ([]conformanceCase, error) {
+	scanner := bufio.NewScanner(bytes.NewReader(content))
+	scanner.Buffer(make([]byte, 0, 4096), 8*1024*1024)
+
+	tests := make([]conformanceCase, 0, 20000)
+	for lineNo := 1; scanner.Scan(); lineNo++ {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		raw := line
+		comment := ""
+		if i := strings.IndexByte(raw, '#'); i >= 0 {
+			comment = strings.TrimSpace(raw[i+1:])
+			raw = strings.TrimSpace(raw[:i])
+		}
+		if raw == "" {
+			continue
+		}
+
+		fields := strings.Fields(raw)
+		if len(fields) < 3 || len(fields)%2 == 0 {
+			return nil, fmt.Errorf("line %d: invalid field layout", lineNo)
+		}
+		if fields[0] != "÷" && fields[0] != "×" {
+			return nil, fmt.Errorf("line %d: invalid leading marker %q", lineNo, fields[0])
+		}
+
+		tc := conformanceCase{
+			lineNo:       lineNo,
+			input:        make([]byte, 0, len(fields)*2),
+			breakOffsets: make([]int, 0, len(fields)/2+1),
+			comment:      comment,
+		}
+		if fields[0] == "÷" {
+			tc.breakOffsets = append(tc.breakOffsets, 0)
+		}
+
+		for i := 1; i < len(fields); i += 2 {
+			r, err := parseHexRune(fields[i])
+			if err != nil {
+				return nil, fmt.Errorf("line %d: %w", lineNo, err)
+			}
+			if !utf8.ValidRune(r) {
+				return nil, fmt.Errorf("line %d: invalid rune %q", lineNo, fields[i])
+			}
+			tc.input = utf8.AppendRune(tc.input, r)
+
+			marker := fields[i+1]
+			if marker != "÷" && marker != "×" {
+				return nil, fmt.Errorf("line %d: invalid marker %q", lineNo, marker)
+			}
+			if marker == "÷" {
+				tc.breakOffsets = append(tc.breakOffsets, len(tc.input))
+			}
+		}
+
+		tests = append(tests, tc)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scan line break tests: %w", err)
+	}
+	return tests, nil
 }
 
 func parseRange(s string) (rune, rune, error) {
@@ -197,7 +321,7 @@ func parseHexRune(s string) (rune, error) {
 	return rune(u), nil
 }
 
-func generate(records []record, unicodeVersion, sourceLabel string) ([]byte, error) {
+func generateTrieSource(records []record, unicodeVersion, sourceLabel string) ([]byte, error) {
 	classes := uniqueClasses(records)
 
 	iotasByClass := map[string]uint64{}
@@ -248,6 +372,31 @@ func generate(records []record, unicodeVersion, sourceLabel string) ([]byte, err
 	b = bytes.ReplaceAll(b, []byte("(t *"+typename+") lookupValue"), []byte("lookupValue"))
 	b = bytes.ReplaceAll(b, []byte("t.lookupValue("), []byte("lookupValue("))
 
+	return b, nil
+}
+
+func generateConformanceTestsSource(tests []conformanceCase, sourceLabel string) ([]byte, error) {
+	buf := bytes.Buffer{}
+	fmt.Fprintln(&buf, "package uax14")
+	fmt.Fprintln(&buf)
+	fmt.Fprintln(&buf, "// Code generated by internal/gen; DO NOT EDIT.")
+	fmt.Fprintf(&buf, "// Source: %s\n\n", sourceLabel)
+	fmt.Fprintln(&buf, "type generatedConformanceCase struct {")
+	fmt.Fprintln(&buf, "\tlineNo       int")
+	fmt.Fprintln(&buf, "\tinput        []byte")
+	fmt.Fprintln(&buf, "\tbreakOffsets []int")
+	fmt.Fprintln(&buf, "\tcomment      string")
+	fmt.Fprintln(&buf, "}")
+	fmt.Fprintln(&buf)
+	fmt.Fprintf(&buf, "var lineBreakConformanceTests = [%d]generatedConformanceCase{\n", len(tests))
+	for _, tc := range tests {
+		fmt.Fprintf(&buf, "{lineNo: %d, input: %#v, breakOffsets: %#v, comment: %#v},\n", tc.lineNo, tc.input, tc.breakOffsets, tc.comment)
+	}
+	fmt.Fprintln(&buf, "}")
+
+	b := buf.Bytes()
+	b = bytes.ReplaceAll(b, []byte("[]uint8{0x"), []byte("{0x"))
+	b = bytes.ReplaceAll(b, []byte("[]uint8{"), []byte("[]byte{"))
 	return b, nil
 }
 

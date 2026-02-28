@@ -45,17 +45,29 @@
   - `docs/phase3.md`
   - `lookup_test.go`
 
-## Phase 4: SplitFunc core algorithm
+## Phase 4: SplitFunc core algorithm + conformance harness
 
+- Status: in progress (started)
 - Implement `bufio.SplitFunc` as the source of break decisions:
-  - Track current boundary position explicitly (matching spec semantics).
-  - Apply LB rules in spec order and keep rule labels in code comments/branch names so logic reads like UAX #14.
-  - Return both boundary offset and break kind (`must` vs `opportunity`) through internal state.
-- Include explicit handling for CR/LF/NL, combining marks/ZWJ behavior, regional indicators, emoji classes, and numeric punctuation interactions.
-- Keep this path allocation-free: no per-token heap objects, no string/byte copying, and no closure captures on hot loops.
+  - [x] Track current boundary position explicitly (matching spec semantics).
+  - [x] Apply LB rules in spec order and keep rule labels in code comments/branch names so logic reads like UAX #14.
+  - [x] Return both boundary offset and break kind (`must` vs `opportunity`) through internal state.
+- [x] Include explicit handling for CR/LF/NL, combining marks/ZWJ behavior, regional indicators, emoji classes, and numeric punctuation interactions.
+- [x] Keep this path allocation-free: no per-token heap objects, no string/byte copying, and no closure captures on hot loops.
+- Conformance harness (now part of Phase 4):
+  - [x] Parse `LineBreakTest.txt` and assert produced boundaries + mandatory-status invariants via internal split decisions.
+  - [x] Land the harness now even if not yet passing; treat failures as rule-completion backlog.
+  - [ ] Add an explicit API fitness checkpoint after parser + harness are working: "Does current iterator/API shape allow straightforward execution and assertion of conformance cases?" If not, revise API before stabilizing docs.
+- Implementation artifacts:
+  - `splitfunc.go`
+  - `splitfunc_test.go`
+  - `linebreak_conformance_test.go`
+  - `linebreak_conformance_generated_test.go`
+  - `docs/phase4.md`
 
 ## Phase 5: Iterator + public API
 
+- Status: pending (blocked on initial conformance harness signal)
 - Build iterator around split decisions:
   - `NewIterator[T ~string | ~[]byte](in T)`
   - `Next() bool`
@@ -67,12 +79,10 @@
 - Keep API close to your sketch in `SPEC.md`; prefer correctness and clarity over early options.
 - Add package docs and one short example demonstrating loop usage.
 
-## Phase 6: Test strategy and quality gates
+## Phase 6: Remaining test strategy and quality gates
 
-- Conformance tests:
-  - Parse `LineBreakTest.txt` and assert produced boundaries + mandatory status.
-  - Add an explicit API fitness checkpoint after parser + harness are working: "Does current iterator/API shape allow straightforward execution and assertion of conformance cases?" If not, revise API before stabilizing docs.
-  - Table tests for tricky LB rule interactions.
+- Status: pending
+- Table tests for tricky LB rule interactions.
 - Regression tests for UTF-8 edge cases (invalid sequences, long runs, mixed scripts).
 - Add API parity tests that run the same corpus through `string` and `[]byte` generic instantiations and assert identical boundaries/break-kind semantics.
 - Add lightweight benchmarks (ASCII, CJK, emoji-heavy) to track iterator throughput and allocations.
@@ -83,8 +93,9 @@
 
 - Milestone 1: codegen + lookup + class tests.
 - Milestone 2: initial SplitFunc covering structural rules and simple classes.
-- Milestone 3: full LB rule coverage + conformance pass against `LineBreakTest.txt`.
-- Milestone 4: iterator/API polish, docs, benchmarks, and release prep.
+- Milestone 3: Phase 4 conformance harness integrated and running (currently failing until deferred rules are completed).
+- Milestone 4: full LB rule coverage + conformance pass against `LineBreakTest.txt`.
+- Milestone 5: iterator/API polish, docs, benchmarks, and release prep.
 
 ## Risks and mitigations
 
