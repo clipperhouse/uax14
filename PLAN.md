@@ -11,11 +11,16 @@
 
 ## Phase 1: Research and rule mapping
 
-- Parse UAX #14 into an implementation worksheet: each LB rule (`LB1`, `LB2`, …) mapped to concrete predicate logic, required lookbehind/lookahead, and break outcome (`must`, `may`, `no`).
-- Confirm class source-of-truth from `LineBreak.txt`; document handling of derived/default values and any classes requiring algorithmic remapping.
-- Validate conformance assets exist and pin them in docs:
+- Status: in progress (started)
+- [x] Parse UAX #14 into an implementation worksheet: each LB rule (`LB1`, `LB2`, ...) mapped to concrete predicate logic, required lookbehind/lookahead, and break outcome (`must`, `may`, `no`).
+- [x] Confirm class source-of-truth from `LineBreak.txt`; document handling of derived/default values and classes requiring algorithmic remapping.
+- [x] Validate conformance assets exist and pin them in docs:
   - `https://unicode.org/Public/UNIDATA/LineBreak.txt`
   - `https://unicode.org/Public/UCD/latest/ucd/auxiliary/LineBreakTest.txt`
+- Implementation artifacts:
+  - `docs/phase1.md`
+  - `docs/unicode-data.md`
+  - `docs/rule-worksheet.md`
 
 ## Phase 2: Repo/file skeleton
 
