@@ -24,11 +24,16 @@
 
 ## Phase 2: Unicode data + trie codegen
 
-- Implement generator to fetch and parse Unicode data (version-pinned URL + optional local cache).
-- Emit:
-  - Line break class enum as bit-flags (`1 << iota`) to support fast set checks.
-  - Trie lookup table via `x/text` triegen for UTF-8 byte lookup.
-- Keep generated artifacts stable (sorted output, header with Unicode version) to reduce diff noise.
+- Status: in progress (started)
+- [x] Implement generator to fetch and parse Unicode data (version-pinned URL + optional local file override).
+- [x] Emit line break class enum as bit-flags (`1 << iota`) to support fast set checks.
+- [x] Emit UTF-8 trie lookup table for byte-oriented lookup.
+- [x] Keep generated artifacts stable (sorted output, header with Unicode version) to reduce diff noise.
+- Implementation artifacts:
+  - `docs/phase2.md`
+  - `generate.go`
+  - `trie.go` (generated)
+  - `internal/gen/main.go`
 
 ## Phase 3: Lookup API
 

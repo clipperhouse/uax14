@@ -1,0 +1,270 @@
+// Package main generates line-break trie data.
+package main
+
+import (
+	"bufio"
+	"bytes"
+	"flag"
+	"fmt"
+	"go/format"
+	"io"
+	"net/http"
+	"os"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/clipperhouse/uax14/internal/gen/triegen"
+)
+
+const (
+	defaultLineBreakURL = "https://unicode.org/Public/UNIDATA/LineBreak.txt"
+	outputFilename      = "../../trie.go"
+)
+
+var versionRE = regexp.MustCompile(`LineBreak-([0-9]+(?:\.[0-9]+)*)\.txt`)
+
+type record struct {
+	lo    rune
+	hi    rune
+	class string
+}
+
+func main() {
+	var inputPath string
+	var sourceURL string
+
+	flag.StringVar(&inputPath, "input", "", "path to local LineBreak.txt file (optional)")
+	flag.StringVar(&sourceURL, "url", defaultLineBreakURL, "LineBreak.txt URL")
+	flag.Parse()
+
+	content, sourceLabel, err := loadData(inputPath, sourceURL)
+	if err != nil {
+		fail(err)
+	}
+
+	version := extractVersion(content)
+	records, err := parseLineBreak(content)
+	if err != nil {
+		fail(err)
+	}
+
+	src, err := generate(records, version, sourceLabel)
+	if err != nil {
+		fail(err)
+	}
+
+	formatted, err := format.Source(src)
+	if err != nil {
+		fail(fmt.Errorf("format generated file: %w", err))
+	}
+
+	if err := os.WriteFile(outputFilename, formatted, 0o644); err != nil {
+		fail(fmt.Errorf("write %s: %w", outputFilename, err))
+	}
+}
+
+func loadData(inputPath, sourceURL string) ([]byte, string, error) {
+	if inputPath != "" {
+		b, err := os.ReadFile(inputPath)
+		if err != nil {
+			return nil, "", fmt.Errorf("read input file: %w", err)
+		}
+		return b, inputPath, nil
+	}
+
+	req, err := http.NewRequest(http.MethodGet, sourceURL, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("build request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("download %s: %w", sourceURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("download %s: status %s", sourceURL, resp.Status)
+	}
+
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("read response body: %w", err)
+	}
+
+	return b, sourceURL, nil
+}
+
+func extractVersion(content []byte) string {
+	m := versionRE.FindSubmatch(content)
+	if len(m) < 2 {
+		return "unknown"
+	}
+	return string(m[1])
+}
+
+func parseLineBreak(content []byte) ([]record, error) {
+	scanner := bufio.NewScanner(bytes.NewReader(content))
+	scanner.Buffer(make([]byte, 0, 1024), 1024*1024)
+
+	records := make([]record, 0, 4096)
+	for lineNo := 1; scanner.Scan(); lineNo++ {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		semi := strings.IndexRune(line, ';')
+		if semi == -1 {
+			return nil, fmt.Errorf("line %d: missing ';'", lineNo)
+		}
+
+		left := strings.TrimSpace(line[:semi])
+		right := strings.TrimSpace(line[semi+1:])
+		if i := strings.IndexRune(right, '#'); i >= 0 {
+			right = strings.TrimSpace(right[:i])
+		}
+
+		if left == "" || right == "" {
+			return nil, fmt.Errorf("line %d: malformed entry", lineNo)
+		}
+
+		lo, hi, err := parseRange(left)
+		if err != nil {
+			return nil, fmt.Errorf("line %d: %w", lineNo, err)
+		}
+
+		records = append(records, record{
+			lo:    lo,
+			hi:    hi,
+			class: right,
+		})
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scan file: %w", err)
+	}
+
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].lo != records[j].lo {
+			return records[i].lo < records[j].lo
+		}
+		if records[i].hi != records[j].hi {
+			return records[i].hi < records[j].hi
+		}
+		return records[i].class < records[j].class
+	})
+
+	return records, nil
+}
+
+func parseRange(s string) (rune, rune, error) {
+	if strings.Contains(s, "..") {
+		parts := strings.SplitN(s, "..", 2)
+		if len(parts) != 2 {
+			return 0, 0, fmt.Errorf("invalid range %q", s)
+		}
+		lo, err := parseHexRune(parts[0])
+		if err != nil {
+			return 0, 0, err
+		}
+		hi, err := parseHexRune(parts[1])
+		if err != nil {
+			return 0, 0, err
+		}
+		if hi < lo {
+			return 0, 0, fmt.Errorf("descending range %q", s)
+		}
+		return lo, hi, nil
+	}
+
+	r, err := parseHexRune(s)
+	if err != nil {
+		return 0, 0, err
+	}
+	return r, r, nil
+}
+
+func parseHexRune(s string) (rune, error) {
+	u, err := strconv.ParseUint(strings.TrimSpace(s), 16, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid code point %q: %w", s, err)
+	}
+	if u > 0x10FFFF {
+		return 0, fmt.Errorf("code point out of range %q", s)
+	}
+	return rune(u), nil
+}
+
+func generate(records []record, unicodeVersion, sourceLabel string) ([]byte, error) {
+	classes := uniqueClasses(records)
+
+	iotasByClass := map[string]uint64{}
+	for i, c := range classes {
+		iotasByClass[c] = 1 << i
+	}
+
+	trie := triegen.NewTrie("lineBreak")
+	for _, rec := range records {
+		v := iotasByClass[rec.class]
+		for r := rec.lo; r <= rec.hi; r++ {
+			if r >= 0xD800 && r <= 0xDFFF {
+				continue
+			}
+			trie.Insert(r, v)
+		}
+	}
+
+	buf := bytes.Buffer{}
+	fmt.Fprintln(&buf, "package uax14")
+	fmt.Fprintln(&buf)
+	fmt.Fprintln(&buf, "// Code generated by internal/gen; DO NOT EDIT.")
+	fmt.Fprintf(&buf, "// Source: %s\n", sourceLabel)
+	fmt.Fprintf(&buf, "// Unicode LineBreak version: %s\n\n", unicodeVersion)
+	fmt.Fprintln(&buf, "type property uint64")
+	fmt.Fprintln(&buf)
+	fmt.Fprintln(&buf, "const (")
+	for i, c := range classes {
+		if i == 0 {
+			fmt.Fprintf(&buf, "\t_%s property = 1 << iota\n", c)
+		} else {
+			fmt.Fprintf(&buf, "\t_%s\n", c)
+		}
+	}
+	fmt.Fprintln(&buf, ")")
+	fmt.Fprintln(&buf)
+	fmt.Fprintf(&buf, "const UnicodeLineBreakVersion = %q\n\n", unicodeVersion)
+
+	_, err := triegen.Gen(&buf, "lineBreak", []*triegen.Trie{trie})
+	if err != nil {
+		return nil, err
+	}
+
+	b := buf.Bytes()
+	typename := "lineBreakTrie"
+	b = bytes.ReplaceAll(b, []byte("type "+typename+" struct"), []byte("// type "+typename+" struct"))
+	b = bytes.ReplaceAll(b, []byte("(t *"+typename+") lookup(s []byte)"), []byte("lookup[T ~string | ~[]byte](s T)"))
+	b = bytes.ReplaceAll(b, []byte("(t *"+typename+") lookupValue"), []byte("lookupValue"))
+	b = bytes.ReplaceAll(b, []byte("t.lookupValue("), []byte("lookupValue("))
+
+	return b, nil
+}
+
+func uniqueClasses(records []record) []string {
+	m := map[string]struct{}{}
+	for _, r := range records {
+		m[r.class] = struct{}{}
+	}
+	out := make([]string, 0, len(m))
+	for c := range m {
+		out = append(out, c)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func fail(err error) {
+	fmt.Fprintln(os.Stderr, err)
+	os.Exit(1)
+}
