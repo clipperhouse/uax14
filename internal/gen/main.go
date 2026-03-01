@@ -102,7 +102,9 @@ func main() {
 	}
 	eastAsianRecords := selectEastAsianRecords(eastAsianWidthRecords)
 
-	src, err := generateTrieSource(records, quoteCategoryRecords, eastAsianRecords, version, sourceLabel, categorySourceLabel, eastAsianWidthSourceLabel)
+	extPictUnassignedRecords := selectExtendedPictographicUnassignedRecords(categoryRecords)
+
+	src, err := generateTrieSource(records, quoteCategoryRecords, eastAsianRecords, extPictUnassignedRecords, version, sourceLabel, categorySourceLabel, eastAsianWidthSourceLabel)
 	if err != nil {
 		fail(err)
 	}
@@ -351,11 +353,12 @@ func parseHexRune(s string) (rune, error) {
 	return rune(u), nil
 }
 
-func generateTrieSource(records, quoteCategories, eastAsian []record, unicodeVersion, sourceLabel, categorySourceLabel, eastAsianSourceLabel string) ([]byte, error) {
-	allRecords := make([]record, 0, len(records)+len(quoteCategories)+len(eastAsian)+1)
+func generateTrieSource(records, quoteCategories, eastAsian, extPictUnassigned []record, unicodeVersion, sourceLabel, categorySourceLabel, eastAsianSourceLabel string) ([]byte, error) {
+	allRecords := make([]record, 0, len(records)+len(quoteCategories)+len(eastAsian)+len(extPictUnassigned)+1)
 	allRecords = append(allRecords, records...)
 	allRecords = append(allRecords, quoteCategories...)
 	allRecords = append(allRecords, eastAsian...)
+	allRecords = append(allRecords, extPictUnassigned...)
 	// LB28a treats dotted circle specially; keep this as a dedicated bit.
 	allRecords = append(allRecords, record{lo: 0x25CC, hi: 0x25CC, class: "DC"})
 
@@ -484,6 +487,47 @@ func selectEastAsianRecords(records []record) []record {
 		}
 	}
 	return out
+}
+
+func selectExtendedPictographicUnassignedRecords(records []record) []record {
+	// UAX #44 specifies Extended_Pictographic default=Y for unassigned code points
+	// in these ranges.
+	extPictDefaultRanges := []struct {
+		lo rune
+		hi rune
+	}{
+		{lo: 0x1F000, hi: 0x1FAFF},
+		{lo: 0x1FC00, hi: 0x1FFFD},
+	}
+
+	out := make([]record, 0, 2048)
+	for _, rec := range records {
+		if rec.class != "Cn" {
+			continue
+		}
+		for _, r := range extPictDefaultRanges {
+			lo := maxRune(rec.lo, r.lo)
+			hi := minRune(rec.hi, r.hi)
+			if lo <= hi {
+				out = append(out, record{lo: lo, hi: hi, class: "EPU"})
+			}
+		}
+	}
+	return out
+}
+
+func maxRune(a, b rune) rune {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func minRune(a, b rune) rune {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func fail(err error) {

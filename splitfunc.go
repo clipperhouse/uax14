@@ -464,6 +464,14 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 			}
 		}
 
+		// https://www.unicode.org/reports/tr14/#LB30b
+		// EB × EM
+		// [\p{Extended_Pictographic}&\p{Cn}] × EM
+		if (lastExCMZWJ.is(_EB) || lastExCMZWJ.is(_EPU)) && current.is(_EM) {
+			pos += w
+			continue
+		}
+
 		// https://www.unicode.org/reports/tr14/#LB31
 		// Default break opportunity
 		return pos, breakOpportunity
