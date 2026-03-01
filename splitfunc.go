@@ -313,6 +313,14 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 			continue
 		}
 
+		// https://www.unicode.org/reports/tr14/#LB24
+		// (PR | PO) × (AL | HL)
+		// (AL | HL) × (PR | PO)
+		if (lastExCMZWJ.is(_PR|_PO) && current.is(_AL|_HL)) || (lastExCMZWJ.is(_AL|_HL) && current.is(_PR|_PO)) {
+			pos += w
+			continue
+		}
+
 		// https://www.unicode.org/reports/tr14/#LB31
 		// Default break opportunity
 		return pos, breakOpportunity
