@@ -27,11 +27,12 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 
 	// These vars are stateful across loop iterations
 	var pos int
-	var lastExSP property = 0     // "last excluding SP"
-	var beforeLastExSP property   // predecessor of lastExSP, with CM/ZWJ ignored
-	var lastExCMZWJ property = 0  // "last excluding CM and ZWJ"
-	var lastExSYIS property = 0   // "last excluding SY and IS", with CM/ZWJ ignored
-	var beforeLastExSYIS property // predecessor of lastExSYIS
+	var lastExSP property          // "last excluding SP"
+	var beforeLastExSP property    // predecessor of lastExSP, with CM/ZWJ ignored
+	var lastExCMZWJ property       // "last excluding CM and ZWJ"
+	var lastExSYIS property        // "last excluding SY and IS", with CM/ZWJ ignored
+	var beforeLastExSYIS property  // predecessor of lastExSYIS
+	var regionalIndicatorCount int // count of consecutive RI (excluding CM/ZWJ)
 
 	current, w := lookup(data[pos:])
 	if w == 0 {
@@ -60,6 +61,11 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 		}
 		if !last.is(_CM | _ZWJ) {
 			lastExCMZWJ = last
+			if last.is(_RI) {
+				regionalIndicatorCount++
+			} else {
+				regionalIndicatorCount = 0
+			}
 		}
 		if !lastExCMZWJ.is(_SY | _IS) {
 			beforeLastExSYIS = lastExSYIS
@@ -445,6 +451,17 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 			(lastExCMZWJ.is(_CP) && !lastExCMZWJ.is(_EA) && current.is(_AL|_HL|_NU)) {
 			pos += w
 			continue
+		}
+
+		// https://www.unicode.org/reports/tr14/#LB30a
+		// sot (RI RI)* RI × RI
+		// [^RI] (RI RI)* RI × RI
+		if lastExCMZWJ.is(_RI) && current.is(_RI) {
+			odd := regionalIndicatorCount%2 == 1
+			if odd {
+				pos += w
+				continue
+			}
 		}
 
 		// https://www.unicode.org/reports/tr14/#LB31
