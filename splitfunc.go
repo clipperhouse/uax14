@@ -251,6 +251,20 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 			}
 		}
 
+		// https://www.unicode.org/reports/tr14/#LB20
+		// ÷ CB, CB ÷
+		if (current | lastExCMZWJ).is(_CB) {
+			return pos, breakOpportunity
+		}
+
+		// https://www.unicode.org/reports/tr14/#LB20a
+		// (sot | BK | CR | LF | NL | SP | ZW | CB | GL) (HY | HH) × (AL | HL)
+		if last.is(_HY|_HH) && current.is(_AL|_HL) &&
+			(prevExCMZWJ == 0 || prevExCMZWJ.is(_BK|_CR|_LF|_NL|_SP|_ZW|_CB|_GL)) {
+			pos += w
+			continue
+		}
+
 		// https://www.unicode.org/reports/tr14/#LB31
 		// Default break opportunity
 		return pos, breakOpportunity
