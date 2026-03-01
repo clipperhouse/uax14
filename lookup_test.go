@@ -25,7 +25,7 @@ func TestLookup_RepresentativeClasses(t *testing.T) {
 		{name: "CM combining mark", in: "\u0301", want: _CM},
 		{name: "ID CJK ideograph", in: "中", want: _ID},
 		{name: "RI regional indicator", in: "🇺", want: _RI},
-		{name: "XX default unassigned", in: "\u0378", want: _XX},
+		{name: "AL default unassigned", in: "\u0378", want: _AL},
 	}
 
 	for _, tt := range tests {

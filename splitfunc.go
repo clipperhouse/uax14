@@ -39,6 +39,9 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 		pos = len(data)
 		return pos, breakMandatory
 	}
+	if current == 0 {
+		current = _AL
+	}
 
 	// https://www.unicode.org/reports/tr14/#LB2
 	// Start of text always advances
@@ -76,6 +79,9 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 		if w == 0 {
 			pos = len(data)
 			return pos, breakMandatory
+		}
+		if current == 0 {
+			current = _AL
 		}
 
 		// https://www.unicode.org/reports/tr14/#LB4
@@ -184,6 +190,9 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 				nr, nw := lookup(data[pos+w:])
 				if nw > 0 {
 					next = nr
+					if next == 0 {
+						next = _AL
+					}
 				}
 			}
 			if next == 0 || next.is(_SP|_GL|_WJ|_CL|_QU|_CP|_EX|_IS|_SY|_BK|_CR|_LF|_NL|_ZW) {
@@ -200,6 +209,9 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 				nr, nw := lookup(data[pos+w:])
 				if nw > 0 {
 					next = nr
+					if next == 0 {
+						next = _AL
+					}
 				}
 			}
 			if next.is(_NU) {
@@ -252,6 +264,9 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 				nr, nw := lookup(data[pos+w:])
 				if nw > 0 {
 					next = nr
+					if next == 0 {
+						next = _AL
+					}
 				}
 			}
 
@@ -369,10 +384,16 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 				nr, nw := lookup(data[pos+w:])
 				if nw > 0 {
 					next = nr
+					if next == 0 {
+						next = _AL
+					}
 					if pos+w+nw < len(data) {
 						n2r, n2w := lookup(data[pos+w+nw:])
 						if n2w > 0 {
 							next2 = n2r
+							if next2 == 0 {
+								next2 = _AL
+							}
 						}
 					}
 				}
@@ -931,21 +952,9 @@ func splitDecisionOld[T ~string | ~[]byte](data T, atEOF bool) (advance int, kin
 	}
 }
 
-func lbClass[T ~string | ~[]byte](p property, in T) property {
-	switch p {
-	case _AI, _SG, _XX:
-		return _AL
-	case _CJ:
-		return _NS
-	case _SA:
-		// SA maps to CM for combining marks, otherwise AL.
-		if isCombiningMark(in) {
-			return _CM
-		}
-		return _AL
-	default:
-		return p
-	}
+// lbClass is a no-op: class resolution now happens at trie generation time.
+func lbClass[T ~string | ~[]byte](p property, _ T) property {
+	return p
 }
 
 func isLB25NoBreak(prev, left, right property) bool {
@@ -1143,7 +1152,7 @@ func leftBaseIsExtPictCn[T ~string | ~[]byte](data T, boundary int) bool {
 			i = j
 			continue
 		}
-		if raw != _XX && raw != _ID {
+		if !raw.is(_AL | _ID) {
 			return false
 		}
 

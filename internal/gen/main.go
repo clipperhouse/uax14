@@ -91,6 +91,9 @@ func main() {
 		fail(err)
 	}
 	quoteCategoryRecords := selectQuoteCategoryRecords(categoryRecords)
+	combiningMarks := selectCombiningMarks(categoryRecords)
+
+	records = resolveLineBreakClasses(records, combiningMarks)
 
 	eastAsianWidthContent, eastAsianWidthSourceLabel, err := loadData(eastAsianWidthInputPath, eastAsianWidthURL, cachePath("EastAsianWidth.txt"), refresh)
 	if err != nil {
@@ -381,6 +384,15 @@ func generateTrieSource(records, quoteCategories, eastAsian, extPictUnassigned [
 			runeValues[r] |= v
 		}
 	}
+	// Entries with only annotation bits (e.g. EPU without a LineBreak.txt entry)
+	// default to AL, matching the XX → AL resolution for unmapped code points.
+	annotationMask := iotasByClass["DC"] | iotasByClass["EA"] | iotasByClass["EPU"] | iotasByClass["PI"] | iotasByClass["PF"]
+	for r, v := range runeValues {
+		if v&^annotationMask == 0 {
+			runeValues[r] = v | iotasByClass["AL"]
+		}
+	}
+
 	for r, v := range runeValues {
 		trie.Insert(r, v)
 	}
@@ -528,6 +540,47 @@ func minRune(a, b rune) rune {
 		return a
 	}
 	return b
+}
+
+// selectCombiningMarks returns the set of runes with General_Category Mn or Mc.
+func selectCombiningMarks(categoryRecords []record) map[rune]bool {
+	marks := make(map[rune]bool)
+	for _, rec := range categoryRecords {
+		if rec.class == "Mn" || rec.class == "Mc" {
+			for r := rec.lo; r <= rec.hi; r++ {
+				marks[r] = true
+			}
+		}
+	}
+	return marks
+}
+
+// resolveLineBreakClasses applies UAX #14 §6.1 class resolution at generation time:
+//
+//	AI/SG/XX → AL, CJ → NS, SA → CM (Mn/Mc) or AL (others).
+//
+// This eliminates the need for runtime class resolution.
+func resolveLineBreakClasses(records []record, combiningMarks map[rune]bool) []record {
+	out := make([]record, 0, len(records))
+	for _, rec := range records {
+		switch rec.class {
+		case "AI", "SG", "XX":
+			out = append(out, record{lo: rec.lo, hi: rec.hi, class: "AL"})
+		case "CJ":
+			out = append(out, record{lo: rec.lo, hi: rec.hi, class: "NS"})
+		case "SA":
+			for r := rec.lo; r <= rec.hi; r++ {
+				if combiningMarks[r] {
+					out = append(out, record{lo: r, hi: r, class: "CM"})
+				} else {
+					out = append(out, record{lo: r, hi: r, class: "AL"})
+				}
+			}
+		default:
+			out = append(out, rec)
+		}
+	}
+	return out
 }
 
 func fail(err error) {
