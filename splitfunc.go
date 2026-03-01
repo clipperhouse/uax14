@@ -27,9 +27,11 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 
 	// These vars are stateful across loop iterations
 	var pos int
-	var lastExSP property = 0    // "last excluding SP"
-	var beforeLastExSP property  // predecessor of lastExSP, with CM/ZWJ ignored
-	var lastExCMZWJ property = 0 // "last excluding CM and ZWJ"
+	var lastExSP property = 0     // "last excluding SP"
+	var beforeLastExSP property   // predecessor of lastExSP, with CM/ZWJ ignored
+	var lastExCMZWJ property = 0  // "last excluding CM and ZWJ"
+	var lastExSYIS property = 0   // "last excluding SY and IS", with CM/ZWJ ignored
+	var beforeLastExSYIS property // predecessor of lastExSYIS
 
 	current, w := lookup(data[pos:])
 	if w == 0 {
@@ -58,6 +60,10 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 		}
 		if !last.is(_CM | _ZWJ) {
 			lastExCMZWJ = last
+		}
+		if !lastExCMZWJ.is(_SY | _IS) {
+			beforeLastExSYIS = lastExSYIS
+			lastExSYIS = lastExCMZWJ
 		}
 
 		current, w = lookup(data[pos:])
@@ -317,6 +323,62 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 		// (PR | PO) × (AL | HL)
 		// (AL | HL) × (PR | PO)
 		if (lastExCMZWJ.is(_PR|_PO) && current.is(_AL|_HL)) || (lastExCMZWJ.is(_AL|_HL) && current.is(_PR|_PO)) {
+			pos += w
+			continue
+		}
+
+		// https://www.unicode.org/reports/tr14/#LB25
+		// NU ( SY | IS )* CL × PO
+		// NU ( SY | IS )* CP × PO
+		// NU ( SY | IS )* CL × PR
+		// NU ( SY | IS )* CP × PR
+		// NU ( SY | IS )* × PO
+		// NU ( SY | IS )* × PR
+		// PO × OP NU
+		// PO × OP IS NU
+		// PO × NU
+		// PR × OP NU
+		// PR × OP IS NU
+		// PR × NU
+		// HY × NU
+		// IS × NU
+		// NU ( SY | IS )* × NU
+		if lastExCMZWJ.is(_NU) && current.is(_SY|_IS|_CL|_CP) {
+			pos += w
+			continue
+		}
+		if current.is(_PO|_PR) &&
+			((lastExCMZWJ.is(_NU)) || (lastExCMZWJ.is(_SY|_IS) && lastExSYIS.is(_NU))) {
+			pos += w
+			continue
+		}
+		if lastExCMZWJ.is(_CL|_CP) && current.is(_PO|_PR) && beforeLastExSYIS.is(_NU) {
+			pos += w
+			continue
+		}
+		if lastExCMZWJ.is(_PO|_PR) && current.is(_OP) {
+			next := property(0)
+			next2 := property(0)
+			if pos+w < len(data) {
+				nr, nw := lookup(data[pos+w:])
+				if nw > 0 {
+					next = nr
+					if pos+w+nw < len(data) {
+						n2r, n2w := lookup(data[pos+w+nw:])
+						if n2w > 0 {
+							next2 = n2r
+						}
+					}
+				}
+			}
+			if next.is(_NU) || (next.is(_IS) && next2.is(_NU)) {
+				pos += w
+				continue
+			}
+		}
+		if current.is(_NU) &&
+			(lastExCMZWJ.is(_PO|_PR|_HY|_IS|_NU) ||
+				(lastExCMZWJ.is(_SY|_IS|_CL|_CP) && lastExSYIS.is(_NU))) {
 			pos += w
 			continue
 		}
