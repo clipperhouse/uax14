@@ -20,15 +20,6 @@ func (p property) is(classes property) bool {
 	return (p & classes) != 0
 }
 
-func splitFunc[T ~string | ~[]byte](data T, atEOF bool) (advance int, token T, err error) {
-	var empty T
-	advance, _, _, err = splitDecision(data, atEOF)
-	if advance == 0 || err != nil {
-		return advance, empty, err
-	}
-	return advance, data[:advance], nil
-}
-
 func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 	if len(data) == 0 {
 		return 0, breakMandatory
@@ -211,12 +202,24 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 			continue
 		}
 
+		// https://www.unicode.org/reports/tr14/#LB31
+		// Default break opportunity
+		return pos, breakOpportunity
 	}
 }
 
-// splitDecision applies UAX #14 rules for the first break boundary in data.
+func splitFunc[T ~string | ~[]byte](data T, atEOF bool) (advance int, token T, err error) {
+	var empty T
+	advance, _, _, err = splitDecisionOld(data, atEOF)
+	if advance == 0 || err != nil {
+		return advance, empty, err
+	}
+	return advance, data[:advance], nil
+}
+
+// splitDecisionOld applies UAX #14 rules for the first break boundary in data.
 // It returns the token advance, break kind, and a rule label for diagnostics.
-func splitDecision[T ~string | ~[]byte](data T, atEOF bool) (advance int, kind breakKind, rule string, err error) {
+func splitDecisionOld[T ~string | ~[]byte](data T, atEOF bool) (advance int, kind breakKind, rule string, err error) {
 	var emptyRule string
 	if len(data) == 0 {
 		return 0, 0, emptyRule, nil

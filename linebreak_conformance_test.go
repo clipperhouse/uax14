@@ -20,7 +20,7 @@ func TestLineBreakConformance(t *testing.T) {
 	examples := make([]string, 0, maxExamples)
 
 	for _, tc := range lineBreakConformanceTests {
-		gotOffsets, gotKinds, gotRules, err := runSplitDecisions(tc.input)
+		gotOffsets, gotKinds, err := runSplitDecisions(tc.input)
 		if err != nil {
 			mismatches++
 			if len(examples) < maxExamples {
@@ -32,7 +32,7 @@ func TestLineBreakConformance(t *testing.T) {
 		if len(gotOffsets) != len(tc.breakOffsets) {
 			mismatches++
 			if len(examples) < maxExamples {
-				examples = append(examples, fmt.Sprintf("line %d: break count mismatch got=%d want=%d input=%q rules=%v got=%v want=%v", tc.lineNo, len(gotOffsets), len(tc.breakOffsets), string(tc.input), gotRules, gotOffsets, tc.breakOffsets))
+				examples = append(examples, fmt.Sprintf("line %d: break count mismatch got=%d want=%d input=%q got=%v want=%v", tc.lineNo, len(gotOffsets), len(tc.breakOffsets), string(tc.input), gotOffsets, tc.breakOffsets))
 			}
 			continue
 		}
@@ -43,7 +43,7 @@ func TestLineBreakConformance(t *testing.T) {
 				caseMismatch = true
 				mismatches++
 				if len(examples) < maxExamples {
-					examples = append(examples, fmt.Sprintf("line %d: break mismatch idx=%d got=%d want=%d input=%q rules=%v got=%v want=%v", tc.lineNo, i, gotOffsets[i], tc.breakOffsets[i], string(tc.input), gotRules, gotOffsets, tc.breakOffsets))
+					examples = append(examples, fmt.Sprintf("line %d: break mismatch idx=%d got=%d want=%d input=%q got=%v want=%v", tc.lineNo, i, gotOffsets[i], tc.breakOffsets[i], string(tc.input), gotOffsets, tc.breakOffsets))
 				}
 				break
 			}
@@ -94,27 +94,22 @@ func TestLineBreakConformance(t *testing.T) {
 	t.Fatalf("line break conformance mismatches remain: %d", mismatches)
 }
 
-func runSplitDecisions(input []byte) ([]int, []breakKind, []string, error) {
+func runSplitDecisions(input []byte) ([]int, []breakKind, error) {
 	remaining := input
 	offset := 0
 	offsets := make([]int, 0, len(input))
 	kinds := make([]breakKind, 0, len(input))
-	rules := make([]string, 0, len(input))
 
 	for len(remaining) > 0 {
-		advance, kind, rule, err := splitDecision(remaining, true)
-		if err != nil {
-			return nil, nil, nil, err
-		}
+		advance, kind := NextBreak(remaining)
 		if advance <= 0 || advance > len(remaining) {
-			return nil, nil, nil, fmt.Errorf("invalid advance: %d", advance)
+			return nil, nil, fmt.Errorf("invalid advance: %d", advance)
 		}
 		offset += advance
 		offsets = append(offsets, offset)
 		kinds = append(kinds, kind)
-		rules = append(rules, rule)
 		remaining = remaining[advance:]
 	}
 
-	return offsets, kinds, rules, nil
+	return offsets, kinds, nil
 }
