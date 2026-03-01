@@ -29,7 +29,7 @@ func splitFunc[T ~string | ~[]byte](data T, atEOF bool) (advance int, token T, e
 	return advance, data[:advance], nil
 }
 
-func Split[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
+func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 	if len(data) == 0 {
 		return 0, breakMandatory
 	}
@@ -37,6 +37,7 @@ func Split[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 	// These vars are stateful across loop iterations
 	var pos int
 	var lastExSP property = 0    // "last excluding SP"
+	var beforeLastExSP property  // predecessor of lastExSP, with CM/ZWJ ignored
 	var lastExCMZWJ property = 0 // "last excluding CM and ZWJ"
 
 	current, w := lookup(data[pos:])
@@ -59,7 +60,9 @@ func Split[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 
 		// Remember previous properties to avoid lookups/lookbacks
 		last := current
+		prevExCMZWJ := lastExCMZWJ
 		if !last.is(_SP) {
+			beforeLastExSP = prevExCMZWJ
 			lastExSP = last
 		}
 		if !last.is(_CM | _ZWJ) {
@@ -156,11 +159,58 @@ func Split[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 		}
 
 		// https://www.unicode.org/reports/tr14/#LB14
-		// OP SP* ×: break after OP SP*
+		// OP SP* ×: no break after OP (with optional SP*)
 		if lastExSP.is(_OP) {
 			pos += w
 			continue
 		}
+
+		// https://www.unicode.org/reports/tr14/#LB15a
+		// (sot | BK | CR | LF | NL | OP | QU | GL | SP | ZW) [\p{Pi}&QU] SP* ×
+		if lastExSP.is(_PI) &&
+			(beforeLastExSP == 0 || beforeLastExSP.is(_BK|_CR|_LF|_NL|_OP|_QU|_GL|_SP|_ZW)) {
+			pos += w
+			continue
+		}
+
+		// https://www.unicode.org/reports/tr14/#LB15b
+		// × [\p{Pf}&QU] (SP | GL | WJ | CL | QU | CP | EX | IS | SY | BK | CR | LF | NL | ZW | eot)
+		if current.is(_PF) && current.is(_QU) {
+			next := property(0) // 0 means eot here
+			if pos+w < len(data) {
+				nr, nw := lookup(data[pos+w:])
+				if nw > 0 {
+					next = nr
+				}
+			}
+			if next == 0 || next.is(_SP|_GL|_WJ|_CL|_QU|_CP|_EX|_IS|_SY|_BK|_CR|_LF|_NL|_ZW) {
+				pos += w
+				continue
+			}
+		}
+
+		// https://www.unicode.org/reports/tr14/#LB15c
+		// SP ÷ IS NU
+		if last.is(_SP) && current.is(_IS) {
+			next := property(0)
+			if pos+w < len(data) {
+				nr, nw := lookup(data[pos+w:])
+				if nw > 0 {
+					next = nr
+				}
+			}
+			if next.is(_NU) {
+				return pos, breakOpportunity
+			}
+		}
+
+		// https://www.unicode.org/reports/tr14/#LB15d
+		// × IS: no break before IS
+		if current.is(_IS) {
+			pos += w
+			continue
+		}
+
 	}
 }
 
