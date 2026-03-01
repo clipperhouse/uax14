@@ -384,12 +384,21 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 		}
 
 		// https://www.unicode.org/reports/tr14/#LB26
-		// 	JL × (JL | JV | H2 | H3)
+		// JL × (JL | JV | H2 | H3)
 		// (JV | H2) × (JV | JT)
 		// (JT | H3) × JT
 		if (lastExCMZWJ.is(_JL) && current.is(_JL|_JV|_H2|_H3)) ||
 			(lastExCMZWJ.is(_JV|_H2) && current.is(_JV|_JT)) ||
 			(lastExCMZWJ.is(_JT|_H3) && current.is(_JT)) {
+			pos += w
+			continue
+		}
+
+		// https://www.unicode.org/reports/tr14/#LB27
+		// (JL | JV | JT | H2 | H3) × PO
+		// PR × (JL | JV | JT | H2 | H3)
+		if (lastExCMZWJ.is(_JL|_JV|_JT|_H2|_H3) && current.is(_PO)) ||
+			(lastExCMZWJ.is(_PR) && current.is(_JL|_JV|_JT|_H2|_H3)) {
 			pos += w
 			continue
 		}
