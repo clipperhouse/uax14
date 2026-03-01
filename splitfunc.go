@@ -473,7 +473,8 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 		}
 
 		// https://www.unicode.org/reports/tr14/#LB31
-		// Default break opportunity
+		// ALL ÷
+		// ÷ ALL
 		return pos, breakOpportunity
 	}
 }
