@@ -68,13 +68,13 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 
 		// https://www.unicode.org/reports/tr14/#LB4
 		// Break after BK
-		if last == _BK {
+		if last.is(_BK) {
 			return pos, breakMandatory
 		}
 
 		// https://www.unicode.org/reports/tr14/#LB5
 		// CR × LF; break after CR, LF, NL
-		if last == _CR && current == _LF {
+		if last.is(_CR) && current.is(_LF) {
 			pos += w
 			continue
 		}
@@ -227,6 +227,28 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 		if (current.is(_QU) && !current.is(_PI)) || (lastExCMZWJ.is(_QU) && !lastExCMZWJ.is(_PF)) {
 			pos += w
 			continue
+		}
+
+		// https://www.unicode.org/reports/tr14/#LB19a
+		// [^$EastAsian] × QU
+		// × QU ( [^$EastAsian] | eot )
+		// QU × [^$EastAsian]
+		// ( sot | [^$EastAsian] ) QU ×
+		if current.is(_QU) || last.is(_QU) {
+			next := property(0) // 0 means eot here
+			if pos+w < len(data) {
+				nr, nw := lookup(data[pos+w:])
+				if nw > 0 {
+					next = nr
+				}
+			}
+
+			noBreakBeforeQU := current.is(_QU) && (!last.is(_EA) || !next.is(_EA))
+			noBreakAfterQU := last.is(_QU) && (!current.is(_EA) || prevExCMZWJ == 0 || !prevExCMZWJ.is(_EA))
+			if noBreakBeforeQU || noBreakAfterQU {
+				pos += w
+				continue
+			}
 		}
 
 		// https://www.unicode.org/reports/tr14/#LB31
