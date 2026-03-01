@@ -352,10 +352,12 @@ func parseHexRune(s string) (rune, error) {
 }
 
 func generateTrieSource(records, quoteCategories, eastAsian []record, unicodeVersion, sourceLabel, categorySourceLabel, eastAsianSourceLabel string) ([]byte, error) {
-	allRecords := make([]record, 0, len(records)+len(quoteCategories)+len(eastAsian))
+	allRecords := make([]record, 0, len(records)+len(quoteCategories)+len(eastAsian)+1)
 	allRecords = append(allRecords, records...)
 	allRecords = append(allRecords, quoteCategories...)
 	allRecords = append(allRecords, eastAsian...)
+	// LB28a treats dotted circle specially; keep this as a dedicated bit.
+	allRecords = append(allRecords, record{lo: 0x25CC, hi: 0x25CC, class: "DC"})
 
 	classes := uniqueClasses(allRecords)
 
