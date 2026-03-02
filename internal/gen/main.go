@@ -4,7 +4,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"flag"
 	"fmt"
 	"go/format"
 	"io"
@@ -21,14 +20,14 @@ import (
 )
 
 const (
-	unicodeVersion           = "17.0.0"
-	lineBreakURL             = "https://unicode.org/Public/" + unicodeVersion + "/ucd/LineBreak.txt"
-	generalCategoryURL       = "https://unicode.org/Public/" + unicodeVersion + "/ucd/extracted/DerivedGeneralCategory.txt"
-	defaultEastAsianWidthURL = "https://unicode.org/Public/" + unicodeVersion + "/ucd/EastAsianWidth.txt"
-	lineBreakTestURL         = "https://unicode.org/Public/" + unicodeVersion + "/ucd/auxiliary/LineBreakTest.txt"
-	outputFilename           = "../../trie.go"
-	outputTestFilename       = "../../unicode_tests.go"
-	cacheDir                 = "cache"
+	unicodeVersion     = "17.0.0"
+	lineBreakURL       = "https://unicode.org/Public/" + unicodeVersion + "/ucd/LineBreak.txt"
+	generalCategoryURL = "https://unicode.org/Public/" + unicodeVersion + "/ucd/extracted/DerivedGeneralCategory.txt"
+	eastAstionWidthURL = "https://unicode.org/Public/" + unicodeVersion + "/ucd/EastAsianWidth.txt"
+	lineBreakTestURL   = "https://unicode.org/Public/" + unicodeVersion + "/ucd/auxiliary/LineBreakTest.txt"
+	outputFilename     = "../../trie.go"
+	outputTestFilename = "../../unicode_tests.go"
+	cacheDir           = "cache"
 )
 
 var versionRE = regexp.MustCompile(`LineBreak-([0-9]+(?:\.[0-9]+)*)\.txt`)
@@ -47,33 +46,11 @@ type conformanceCase struct {
 }
 
 func main() {
-	var inputPath string
-	var sourceURL string
-	var categoryInputPath string
-	var categoryURL string
-	var eastAsianWidthInputPath string
-	var eastAsianWidthURL string
-	var testInputPath string
-	var testURL string
-	var refresh bool
-
-	flag.StringVar(&inputPath, "input", "", "path to local LineBreak.txt file (optional)")
-	flag.StringVar(&sourceURL, "url", lineBreakURL, "LineBreak.txt URL")
-	flag.StringVar(&categoryInputPath, "gcinput", "", "path to local DerivedGeneralCategory.txt file (optional)")
-	flag.StringVar(&categoryURL, "gcurl", generalCategoryURL, "DerivedGeneralCategory.txt URL")
-	flag.StringVar(&eastAsianWidthInputPath, "eawinput", "", "path to local EastAsianWidth.txt file (optional)")
-	flag.StringVar(&eastAsianWidthURL, "eawurl", defaultEastAsianWidthURL, "EastAsianWidth.txt URL")
-	flag.StringVar(&testInputPath, "testinput", "", "path to local LineBreakTest.txt file (optional)")
-	flag.StringVar(&testURL, "testurl", lineBreakTestURL, "LineBreakTest.txt URL")
-	flag.BoolVar(&refresh, "refresh", false, "refresh local cache from network")
-	flag.Parse()
-
-	content, sourceLabel, err := loadData(inputPath, sourceURL, cachePath("LineBreak.txt"), refresh)
+	content, err := loadData(lineBreakURL)
 	if err != nil {
 		fail(err)
 	}
 
-	version := unicodeVersion
 	if extracted := extractVersion(content); extracted != "unknown" && extracted != unicodeVersion {
 		fail(fmt.Errorf("LineBreak.txt version mismatch: got %s, expected %s", extracted, unicodeVersion))
 	}
@@ -82,7 +59,7 @@ func main() {
 		fail(err)
 	}
 
-	categoryContent, categorySourceLabel, err := loadData(categoryInputPath, categoryURL, cachePath("DerivedGeneralCategory.txt"), refresh)
+	categoryContent, err := loadData(generalCategoryURL)
 	if err != nil {
 		fail(err)
 	}
@@ -95,7 +72,7 @@ func main() {
 
 	records = resolveLineBreakClasses(records, combiningMarks)
 
-	eastAsianWidthContent, eastAsianWidthSourceLabel, err := loadData(eastAsianWidthInputPath, eastAsianWidthURL, cachePath("EastAsianWidth.txt"), refresh)
+	eastAsianWidthContent, err := loadData(eastAstionWidthURL)
 	if err != nil {
 		fail(err)
 	}
@@ -107,7 +84,7 @@ func main() {
 
 	extPictUnassignedRecords := selectExtendedPictographicUnassignedRecords(categoryRecords)
 
-	src, err := generateTrieSource(records, quoteCategoryRecords, eastAsianRecords, extPictUnassignedRecords, version, sourceLabel, categorySourceLabel, eastAsianWidthSourceLabel)
+	src, err := generateTrieSource(records, quoteCategoryRecords, eastAsianRecords, extPictUnassignedRecords, unicodeVersion, lineBreakURL, generalCategoryURL, eastAstionWidthURL)
 	if err != nil {
 		fail(err)
 	}
@@ -119,7 +96,7 @@ func main() {
 		fail(fmt.Errorf("write %s: %w", outputFilename, err))
 	}
 
-	testContent, testSourceLabel, err := loadData(testInputPath, testURL, cachePath("LineBreakTest.txt"), refresh)
+	testContent, err := loadData(lineBreakTestURL)
 	if err != nil {
 		fail(err)
 	}
@@ -127,7 +104,7 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	testSrc, err := generateConformanceTestsSource(tests, testSourceLabel)
+	testSrc, err := generateConformanceTestsSource(tests, lineBreakTestURL)
 	if err != nil {
 		fail(err)
 	}
@@ -140,54 +117,50 @@ func main() {
 	}
 }
 
-func loadData(inputPath, sourceURL, cachedPath string, refresh bool) ([]byte, string, error) {
-	if inputPath != "" {
-		b, err := os.ReadFile(inputPath)
-		if err != nil {
-			return nil, "", fmt.Errorf("read input file: %w", err)
-		}
-		return b, inputPath, nil
-	}
+func loadData(sourceURL string) ([]byte, error) {
+	fileName := filepath.Base(sourceURL)
 
-	if !refresh && cachedPath != "" {
+	// Look for cached
+	cachedPath := cachePath(fileName)
+	if cachedPath != "" {
+		fmt.Fprintln(os.Stderr, "using", cachedPath)
 		b, err := os.ReadFile(cachedPath)
-		if err == nil {
-			return b, cachedPath, nil
+		if err != nil {
+			return nil, err
 		}
-		if !os.IsNotExist(err) {
-			return nil, "", fmt.Errorf("read cache %s: %w", cachedPath, err)
-		}
+		return b, nil
 	}
 
+	fmt.Fprintln(os.Stderr, "downloading", sourceURL)
 	req, err := http.NewRequest(http.MethodGet, sourceURL, nil)
 	if err != nil {
-		return nil, "", fmt.Errorf("build request: %w", err)
+		return nil, err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, "", fmt.Errorf("download %s: %w", sourceURL, err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("download %s: status %s", sourceURL, resp.Status)
+		return nil, fmt.Errorf("download %s: status %s", sourceURL, resp.Status)
 	}
 
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, "", fmt.Errorf("read response body: %w", err)
+		return nil, err
 	}
 
 	if cachedPath != "" {
 		if err := os.MkdirAll(filepath.Dir(cachedPath), 0o755); err != nil {
-			return nil, "", fmt.Errorf("create cache dir for %s: %w", cachedPath, err)
+			return nil, err
 		}
 		if err := os.WriteFile(cachedPath, b, 0o644); err != nil {
-			return nil, "", fmt.Errorf("write cache %s: %w", cachedPath, err)
+			return nil, err
 		}
 	}
 
-	return b, sourceURL, nil
+	return b, nil
 }
 
 func cachePath(filename string) string {
@@ -403,8 +376,7 @@ func generateTrieSource(records, quoteCategories, eastAsian, extPictUnassigned [
 	fmt.Fprintln(&buf, "// Code generated by internal/gen; DO NOT EDIT.")
 	fmt.Fprintf(&buf, "// Source: %s\n", sourceLabel)
 	fmt.Fprintf(&buf, "// Source: %s\n", categorySourceLabel)
-	fmt.Fprintf(&buf, "// Source: %s\n", eastAsianSourceLabel)
-	fmt.Fprintf(&buf, "// Unicode LineBreak version: %s\n\n", unicodeVersion)
+	fmt.Fprintf(&buf, "// Source: %s\n\n", eastAsianSourceLabel)
 	fmt.Fprintln(&buf, "type property uint64")
 	fmt.Fprintln(&buf)
 	fmt.Fprintln(&buf, "const (")
