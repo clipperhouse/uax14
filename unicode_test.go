@@ -20,7 +20,7 @@ func TestLineBreakConformance(t *testing.T) {
 	examples := make([]string, 0, maxExamples)
 
 	for _, tc := range conformanceTests {
-		gotOffsets, gotKinds, err := runSplitDecisions(tc.input)
+		gotOffsets, gotKinds, err := breaks(tc.input)
 		if err != nil {
 			mismatches++
 			if len(examples) < maxExamples {
@@ -32,7 +32,7 @@ func TestLineBreakConformance(t *testing.T) {
 		if len(gotOffsets) != len(tc.breakOffsets) {
 			mismatches++
 			if len(examples) < maxExamples {
-				examples = append(examples, fmt.Sprintf("line %d: break count mismatch got=%d want=%d input=%q got=%v want=%v", tc.lineNo, len(gotOffsets), len(tc.breakOffsets), string(tc.input), gotOffsets, tc.breakOffsets))
+				examples = append(examples, fmt.Sprintf("line %d: input=%q got=%v want=%v %s", tc.lineNo, string(tc.input), gotOffsets, tc.breakOffsets, tc.comment))
 			}
 			continue
 		}
@@ -87,14 +87,14 @@ func TestLineBreakConformance(t *testing.T) {
 		return
 	}
 
-	t.Logf("line break conformance mismatches: %d/%d", mismatches, cases)
+	t.Logf("conformance failures: %d/%d", mismatches, cases)
 	for _, ex := range examples {
 		t.Log(ex)
 	}
-	t.Fatalf("line break conformance mismatches remain: %d", mismatches)
+	t.Fatalf("conformance failures remaining: %d", mismatches)
 }
 
-func runSplitDecisions(input []byte) ([]int, []breakKind, error) {
+func breaks(input []byte) ([]int, []breakKind, error) {
 	remaining := input
 	offset := 0
 	offsets := make([]int, 0, len(input))

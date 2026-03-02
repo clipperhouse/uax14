@@ -21,6 +21,7 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 	var lastExSP property          // "last excluding SP"
 	var beforeLastExSP property    // predecessor of lastExSP, with CM/ZWJ ignored
 	var lastExCMZWJ property       // "last excluding CM and ZWJ"
+	var lastExCMZWJSP property     // "last excluding CM and ZWJ and SP"
 	var lastExSYIS property        // "last excluding SY and IS", with CM/ZWJ ignored
 	var beforeLastExSYIS property  // predecessor of lastExSYIS
 	var regionalIndicatorCount int // count of consecutive RI (excluding CM/ZWJ)
@@ -43,7 +44,7 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 			return pos, breakMandatory
 		}
 
-		// Remember previous properties to avoid lookups/lookbacks
+		// Remember previous properties to avoid lookbacks
 		last := current
 		prevExCMZWJ := lastExCMZWJ
 		if !last.is(_SP) {
@@ -57,6 +58,9 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 			} else {
 				regionalIndicatorCount = 0
 			}
+		}
+		if !last.is(_SP | _CM | _ZWJ) {
+			lastExCMZWJSP = last
 		}
 		if !lastExCMZWJ.is(_SY | _IS) {
 			beforeLastExSYIS = lastExSYIS
@@ -117,6 +121,7 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 
 		// https://www.unicode.org/reports/tr14/#LB9
 		// Absorb CM and ZWJ into the preceding base character (if eligible)
+
 		// https://www.unicode.org/reports/tr14/#LB10
 		// Remaining CM and ZWJ (after BK/CR/LF/NL/SP/ZW or sot) resolve to AL
 		if current.is(_CM | _ZWJ) {
@@ -157,14 +162,14 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 
 		// https://www.unicode.org/reports/tr14/#LB14
 		// OP SP* ×: no break after OP (with optional SP*)
-		if lastExSP.is(_OP) {
+		if lastExCMZWJSP.is(_OP) {
 			pos += w
 			continue
 		}
 
 		// https://www.unicode.org/reports/tr14/#LB15a
 		// (sot | BK | CR | LF | NL | OP | QU | GL | SP | ZW) [\p{Pi}&QU] SP* ×
-		if lastExSP.is(_PI) &&
+		if lastExCMZWJSP.is(_PI) &&
 			(beforeLastExSP == 0 || beforeLastExSP.is(_BK|_CR|_LF|_NL|_OP|_QU|_GL|_SP|_ZW)) {
 			pos += w
 			continue
@@ -204,14 +209,14 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 
 		// https://www.unicode.org/reports/tr14/#LB16
 		// (CL | CP) SP* × NS
-		if lastExSP.is(_CL|_CP) && current.is(_NS) {
+		if lastExCMZWJSP.is(_CL|_CP) && current.is(_NS) {
 			pos += w
 			continue
 		}
 
 		// https://www.unicode.org/reports/tr14/#LB17
 		// B2 SP* × B2
-		if lastExSP.is(_B2) && current.is(_B2) {
+		if lastExCMZWJSP.is(_B2) && current.is(_B2) {
 			pos += w
 			continue
 		}
