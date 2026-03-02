@@ -25,13 +25,10 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 	var beforeLastExSYIS property  // predecessor of lastExSYIS
 	var regionalIndicatorCount int // count of consecutive RI (excluding CM/ZWJ)
 
-	current, w := lookup(data[pos:])
+	current, w := lookupProperty(data[pos:])
 	if w == 0 {
 		pos = len(data)
 		return pos, breakMandatory
-	}
-	if current == 0 {
-		current = _AL
 	}
 
 	// https://www.unicode.org/reports/tr14/#LB2
@@ -176,15 +173,9 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 		// https://www.unicode.org/reports/tr14/#LB15b
 		// × [\p{Pf}&QU] (SP | GL | WJ | CL | QU | CP | EX | IS | SY | BK | CR | LF | NL | ZW | eot)
 		if current.is(_PF) && current.is(_QU) {
-			next := property(0) // 0 means eot here
+			var next property
 			if pos+w < len(data) {
-				nr, nw := lookup(data[pos+w:])
-				if nw > 0 {
-					next = nr
-					if next == 0 {
-						next = _AL
-					}
-				}
+				next, _ = lookupProperty(data[pos+w:])
 			}
 			if next == 0 || next.is(_SP|_GL|_WJ|_CL|_QU|_CP|_EX|_IS|_SY|_BK|_CR|_LF|_NL|_ZW) {
 				pos += w
@@ -195,15 +186,9 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 		// https://www.unicode.org/reports/tr14/#LB15c
 		// SP ÷ IS NU
 		if last.is(_SP) && current.is(_IS) {
-			next := property(0)
+			var next property
 			if pos+w < len(data) {
-				nr, nw := lookup(data[pos+w:])
-				if nw > 0 {
-					next = nr
-					if next == 0 {
-						next = _AL
-					}
-				}
+				next, _ = lookupProperty(data[pos+w:])
 			}
 			if next.is(_NU) {
 				return pos, breakOpportunity
@@ -250,15 +235,9 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 		// QU × [^$EastAsian]
 		// ( sot | [^$EastAsian] ) QU ×
 		if current.is(_QU) || last.is(_QU) {
-			next := property(0) // 0 means eot here
+			var next property
 			if pos+w < len(data) {
-				nr, nw := lookup(data[pos+w:])
-				if nw > 0 {
-					next = nr
-					if next == 0 {
-						next = _AL
-					}
-				}
+				next, _ = lookupProperty(data[pos+w:])
 			}
 
 			noBreakBeforeQU := current.is(_QU) && (!last.is(_EA) || !next.is(_EA))
@@ -369,24 +348,11 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 			continue
 		}
 		if lastExCMZWJ.is(_PO|_PR) && current.is(_OP) {
-			next := property(0)
-			next2 := property(0)
+			var next, next2 property
 			if pos+w < len(data) {
-				nr, nw := lookup(data[pos+w:])
-				if nw > 0 {
-					next = nr
-					if next == 0 {
-						next = _AL
-					}
-					if pos+w+nw < len(data) {
-						n2r, n2w := lookup(data[pos+w+nw:])
-						if n2w > 0 {
-							next2 = n2r
-							if next2 == 0 {
-								next2 = _AL
-							}
-						}
-					}
+				next, _ = lookupProperty(data[pos+w:])
+				if pos+w+w < len(data) {
+					next2, _ = lookupProperty(data[pos+w+w:])
 				}
 			}
 			if next.is(_NU) || (next.is(_IS) && next2.is(_NU)) {
@@ -441,8 +407,8 @@ func NextBreak[T ~string | ~[]byte](data T) (advance int, kind breakKind) {
 		}
 		if lastExCMZWJ.is(_AK|_AS|_DC) && current.is(_AK|_AS|_DC) {
 			if pos+w < len(data) {
-				nr, nw := lookup(data[pos+w:])
-				if nw > 0 && nr.is(_VF) {
+				next, _ := lookupProperty(data[pos+w:])
+				if next.is(_VF) {
 					pos += w
 					continue
 				}

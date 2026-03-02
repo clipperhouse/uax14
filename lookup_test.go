@@ -30,7 +30,7 @@ func TestLookup_RepresentativeClasses(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := lookupProperty(tt.in)
+			got, _ := lookupProperty(tt.in)
 			if !got.is(tt.want) {
 				t.Fatalf("lookupProperty(%q) = %#x, want to include %#x", tt.in, got, tt.want)
 			}
@@ -49,8 +49,8 @@ func TestLookup_StringAndBytesParity(t *testing.T) {
 	}
 
 	for _, in := range tests {
-		gotS := lookupProperty(in)
-		gotB := lookupProperty([]byte(in))
+		gotS, _ := lookupProperty(in)
+		gotB, _ := lookupProperty([]byte(in))
 		if gotS != gotB {
 			t.Fatalf("lookupProperty parity mismatch for %q: string=%#x bytes=%#x", in, gotS, gotB)
 		}
@@ -58,10 +58,12 @@ func TestLookup_StringAndBytesParity(t *testing.T) {
 }
 
 func TestLookup_EastAsianWidthBit(t *testing.T) {
-	if !lookupProperty("中").is(_EA) {
+	got, _ := lookupProperty("中")
+	if !got.is(_EA) {
 		t.Fatalf("lookupProperty(%q) should include _EA", "中")
 	}
-	if lookupProperty("A").is(_EA) {
+	got, _ = lookupProperty("A")
+	if !got.is(_EA) {
 		t.Fatalf("lookupProperty(%q) should not include _EA", "A")
 	}
 }

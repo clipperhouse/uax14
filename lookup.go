@@ -4,16 +4,16 @@ import "unicode/utf8"
 
 // lookupProperty normalizes trie lookup results for internal algorithm use.
 // Valid UTF-8 scalars that are unmapped in LineBreak data default to XX.
-func lookupProperty[T ~string | ~[]byte](data T) property {
+func lookupProperty[T ~string | ~[]byte](data T) (property, int) {
 	v, sz := lookup(data)
 	if v != 0 || sz == 0 || len(data) < sz {
-		return v
+		return v, sz
 	}
 
 	if isValidUTF8Prefix(data, sz) {
-		return _AL
+		return _AL, sz
 	}
-	return 0
+	return 0, 0
 }
 
 func isValidUTF8Prefix[T ~string | ~[]byte](data T, sz int) bool {
